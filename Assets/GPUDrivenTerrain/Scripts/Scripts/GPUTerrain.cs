@@ -6,6 +6,7 @@ namespace GPUDrivenTerrainLearn
 {
     public class GPUTerrain : MonoBehaviour
     {
+        //ScriptObject
         public TerrainAsset terrainAsset;
 
         public bool isFrustumCullEnabled = true;
@@ -38,6 +39,7 @@ namespace GPUDrivenTerrainLearn
 
         public bool patchBoundsDebug = false;
 
+        //地形构建脚本
         private TerrainBuilder _traverse;
 
         private Material _terrainMaterial;

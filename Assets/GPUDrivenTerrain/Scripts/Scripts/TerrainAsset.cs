@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace GPUDrivenTerrainLearn{
 
+    //为Asset页面右键Create页面增加标签项
+    //能够右键直接Create这个ScriptableObject
+    //ScriptableObject是一个数据配置存储基类，一个大容量的数据容器
     [CreateAssetMenu(menuName = "GPUDrivenTerrainLearn/TerrainAsset")]
     public class TerrainAsset : ScriptableObject
     {
@@ -15,24 +18,25 @@ namespace GPUDrivenTerrainLearn{
         /// </summary>
         public const int MAX_LOD_NODE_COUNT = 5;
 
+        //配置地形相关的属性
         [SerializeField]
         private Vector3 _worldSize = new Vector3(10240,2048,10240);
-        
+        //反照率（基本颜色）
         [SerializeField]
         private Texture2D _albedoMap;
-
+        //高程
         [SerializeField]
         private Texture2D _heightMap;
-
+        //法线
         [SerializeField]
         private Texture2D _normalMap;
 
         [SerializeField]
         private Texture2D[] _minMaxHeightMaps;
-
+        //四叉树map?
         [SerializeField]
         private Texture2D[] _quadTreeMaps;
-
+        //地形计算着色器，主要负责视锥裁剪，四叉树构建（节点的评价与维护
         [SerializeField]
         private ComputeShader _terrainCompute;
 

@@ -98,6 +98,7 @@ namespace GPUDrivenTerrainLearn
             _maxLODNodeList.SetData(datas);
         }
 
+        //初始化计算着色器中的kernel
         private void InitKernels(){
             _kernelOfTraverseQuadTree = _computeShader.FindKernel("TraverseQuadTree");
             _kernelOfBuildLodMap = _computeShader.FindKernel("BuildLodMap");
@@ -106,6 +107,7 @@ namespace GPUDrivenTerrainLearn
             this.BindComputeShader(_kernelOfBuildLodMap);
             this.BindComputeShader(_kernelOfBuildPatches);
         }
+        //根据index为不同的kernel绑定ComputeBuffer
         private void BindComputeShader(int kernelIndex){
             _computeShader.SetTexture(kernelIndex,"QuadTreeTexture",_asset.quadTreeMap);
             if(kernelIndex == _kernelOfTraverseQuadTree){

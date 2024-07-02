@@ -81,6 +81,7 @@ namespace GPUDrivenTerrainLearn
             uint threadX,threadY,threadZ;
             _computeShader.GetKernelThreadGroupSizes(KERNEL_BLIT,out threadX,out threadY,out threadZ);
             //blit begin
+            //设置计算着色器参数
             _commandBuffer.SetComputeTextureParam(_computeShader,KERNEL_BLIT,ShaderConstants.InTex,ShaderConstants.CameraDepthTexture);
             _commandBuffer.SetComputeTextureParam(_computeShader,KERNEL_BLIT,ShaderConstants.MipTex,hizMap,0);
 
@@ -145,7 +146,7 @@ namespace GPUDrivenTerrainLearn
             _commandBuffer.SetGlobalVector(ShaderConstants.HizCameraPosition,camera.transform.position);
             context.ExecuteCommandBuffer(_commandBuffer);
         }
-
+        //Shader常量类
         private class ShaderConstants{
             
             public static readonly int HizCameraMatrixVP = Shader.PropertyToID("_HizCameraMatrixVP");
@@ -167,7 +168,9 @@ namespace GPUDrivenTerrainLearn
         }
 
         public static int GetHiZMapSize(Camera camera){
+            //屏幕范围较大值
             var screenSize = Mathf.Max(camera.pixelWidth,camera.pixelHeight);
+            //最近的2次幂数
             var textureSize = Mathf.NextPowerOfTwo(screenSize);
             return textureSize;
         }

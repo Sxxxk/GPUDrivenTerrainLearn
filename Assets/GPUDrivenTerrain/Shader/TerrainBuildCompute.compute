@@ -17,6 +17,11 @@ Texture2D<float4> _HeightMap;
 
 RWTexture2D<float4> _LodMap;
 
+//表示TraverseQuadTree kernel当前执行的LOD级别
+uniform uint PassLOD;
+//Consume和Append以uint2作为元素，代表当前LOD下Node的二维索引
+//AppendFinalNodeList以uint3作为元素，
+//其中z表示Node的LOD，xy代表二维索引
 ConsumeStructuredBuffer<uint2> ConsumeNodeList;
 AppendStructuredBuffer<uint2> AppendNodeList;
 AppendStructuredBuffer<uint3> AppendFinalNodeList;
@@ -26,8 +31,7 @@ StructuredBuffer<uint3> FinalNodeList;
 //保存了Node的一些信息，通过NodeId来访问
 RWStructuredBuffer<NodeDescriptor> NodeDescriptors;
 
-//表示TraverseQuadTree kernel执行的LOD级别
-uniform uint PassLOD;
+
 uniform float3 _CameraPositionWS;
 
 //包围盒在高度方向留出冗余空间，应对MinMaxHeightTexture的精度不足
@@ -85,8 +89,9 @@ float GetPatchExtent(uint lod){
 uint GetSectorCountPerNode(uint lod){
     return (uint)WorldLodParams[lod].w;
 }
-
+//计算世界坐标
 float2 GetNodePositionWS2(uint2 nodeLoc,uint mip){
+    //得到该Mip下单元格的边长
     float nodeMeterSize = GetNodeSize(mip);
     float nodeCount = GetNodeCount(mip);
     float2 nodePositionWS = ((float2)nodeLoc - (nodeCount-1)*0.5) * nodeMeterSize;
@@ -118,7 +123,11 @@ uint GetNodeId(uint2 nodeLoc,uint mip){
     return GetNodeId(uint3(nodeLoc,mip));
 }
 
-//遍历四叉树，进行节点评价，生成AppendFinalNodeList和NodeDescriptors
+//遍历四叉树，进行节点评价，
+//具体的算法流程如下：
+1.将当前的PassLOD设置为5(PassLOD是uniform，传入时可能为5)
+2.
+//生成AppendFinalNodeList和NodeDescriptors
 [numthreads(1,1,1)]
 void TraverseQuadTree (uint3 id : SV_DispatchThreadID)
 {
@@ -161,7 +170,7 @@ void BuildLodMap(uint3 id : SV_DispatchThreadID){
 
 //***裁剪部分************//
 
-//测试是否在平面的外侧
+//测试是否在平面的外侧（视锥裁剪需要）
 bool IsOutSidePlane(float4 plane,float3 position){
     return dot(plane.xyz,position) + plane.w < 0; 
 }
@@ -198,7 +207,7 @@ bool IsBoundsOutSidePlane(float4 plane,Bounds bounds){
     return IsAABBOutSidePlane(plane,bounds.minPosition,bounds.maxPosition);
 }
 
-//视锥裁剪
+//※视锥裁剪
 bool FrustumCull(float4 planes[6],Bounds bounds){
     return IsBoundsOutSidePlane(planes[0],bounds) || 
     IsBoundsOutSidePlane(planes[1],bounds) || 
@@ -270,7 +279,7 @@ float SampleHiz(float2 uv,float mip,float mipTexSize){
     return _HizMap.mips[mip][coord].r; 
 }
 
-//Hiz Cull
+//※Hiz裁剪
 bool HizOcclusionCull(Bounds bounds){
     
     
@@ -379,6 +388,7 @@ void SetLodTrans(inout RenderPatch patch,uint3 nodeLoc,uint2 patchOffset){
     patch.lodTrans = (uint4)max(0,lodTrans);
 }
 
+//生成Patch
 [numthreads(8,8,1)]
 void BuildPatches(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,uint3 groupThreadId:SV_GroupThreadID){
     uint3 nodeLoc = FinalNodeList[groupId.x];
