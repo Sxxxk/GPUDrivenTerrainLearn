@@ -10,15 +10,31 @@
 
 #include "./CommonInput.hlsl"
 
+//各个术语简介
+//world:需要渲染的世界大小，10240m*10240m
+//patch:16*16格子组成的Mesh，8*8m，直接渲染world需要1280*1280块(不可能成功)
+//node:每一层LOD的渲染单元，每个渲染单元由8*8=64个patch构成。其中LOD5（最粗糙）有25个Node
+//sector:64m*64m，即LOD0中的Node大小
+//quadTree:一共6层，从上往下分别为LOD5~LOD0
 
+//对于LOD5，在xz平面上分割为5*5的区域，每个区域是一个node
+//遍历这个node，根据规则评价是否细分
+//对于LOD0的Node，patch为原分辨率，即8m*8m，LOD1的Node，patch的分辨率则为16m*16m，
+//以此类推，LOD5的Node，patch分辨率为8*2^5=256m
+//同样可得：下一层LOD的node数是上一层的两倍，如果LOD5是5*5个Node，那么LOD4就是10*10个Node，以此类推LOD0为160*160个Node
+//在实际渲染的时候，会将Node打散为8*8
 Texture2D<float4> MinMaxHeightTexture;
 
 Texture2D<float4> _HeightMap;
 
 RWTexture2D<float4> _LodMap;
 
-//表示TraverseQuadTree kernel当前执行的LOD级别
+//表示TraverseQuadTree kernel当前执行的LOD级别(即当前遍历的高程纹理LOD等级)
 uniform uint PassLOD;
+
+//Unity中的AppendStructuredBuffer和ConsumeStructuredBuffer均为结构化缓存区
+//分别有方法Append()和Consume(),即在缓冲区末尾增加或者删除元素
+
 //Consume和Append以uint2作为元素，代表当前LOD下Node的二维索引
 //AppendFinalNodeList以uint3作为元素，
 //其中z表示Node的LOD，xy代表二维索引
@@ -28,7 +44,11 @@ AppendStructuredBuffer<uint3> AppendFinalNodeList;
 //四叉树遍历完成后，合适的节点存放在这里
 StructuredBuffer<uint3> FinalNodeList;
 
-//保存了Node的一些信息，通过NodeId来访问
+//保存了Node的一些额外信息，通过NodeId来访问
+//额外信息包括材质索引（可能会用于不同地形的材质拼接）,LOD Bias,etc..
+//在本脚本中仅存储branch，代表节点是否被分割
+//NodeDescritors的定义在CommonInput.hlsl中
+//其大小为Node个数之和：5x5+10x10+20x20+40x40+80x80+160x160 = 34125
 RWStructuredBuffer<NodeDescriptor> NodeDescriptors;
 
 
@@ -97,7 +117,7 @@ float2 GetNodePositionWS2(uint2 nodeLoc,uint mip){
     float2 nodePositionWS = ((float2)nodeLoc - (nodeCount-1)*0.5) * nodeMeterSize;
     return nodePositionWS;
 }
-
+//得到节点的世界坐标
 float3 GetNodePositionWS(uint2 nodeLoc,uint lod){
     float2 nodePositionWS = GetNodePositionWS2(nodeLoc,lod);
     float2 minMaxHeight = MinMaxHeightTexture.mips[lod + 3][nodeLoc].xy;
@@ -105,16 +125,19 @@ float3 GetNodePositionWS(uint2 nodeLoc,uint lod){
     return float3(nodePositionWS.x,y,nodePositionWS.y);
 }
 
+//节点评价函数，判断节点是否需要被细分
 bool EvaluateNode(uint2 nodeLoc,uint lod){
-    float3 positionWS = GetNodePositionWS(nodeLoc,lod);
-    float dis = distance(_CameraPositionWS,positionWS);
-    float nodeSize = GetNodeSize(lod);
-    float f = dis / (nodeSize * _NodeEvaluationC.x);
-    if( f < 1){
+    float3 positionWS = GetNodePositionWS(nodeLoc,lod);//节点世界坐标
+    float dis = distance(_CameraPositionWS,positionWS);//摄像机到节点的距离d
+    float nodeSize = GetNodeSize(lod);//节点边长n
+    float f = dis / (nodeSize * _NodeEvaluationC.x);//f=d/(n*c)，c为用户控制
+    if( f < 1){//f<1则对节点进行分割
         return true;
     }
     return false;
 }
+//GPU中没有map结构，所有的缓存区都是一维的，因此NodeDescriptor是一个一维数组
+//如何从uv坐标转化到一维数组下标？——使用GetNodeID函数
 uint GetNodeId(uint3 nodeLoc){
     return NodeIDOffsetOfLOD[nodeLoc.z] + nodeLoc.y * GetNodeCount(nodeLoc.z) + nodeLoc.x;
 }
@@ -125,17 +148,23 @@ uint GetNodeId(uint2 nodeLoc,uint mip){
 
 //遍历四叉树，进行节点评价，
 //具体的算法流程如下：
-1.将当前的PassLOD设置为5(PassLOD是uniform，传入时可能为5)
-2.
+//1.将当前的PassLOD设置为5(PassLOD是uniform，外面是一个for在从LOD高至低传值)
+//2.遍历Node并进行评价
+//3.从Consume中得到Node（遍历），对节点进行评价，判断是否进行分割
+//4.如果进行分割，则将分割后的节点（即下一层LOD的节点）加入Append
+//5.如果不分割，则加入Final作为最后显示的节点列表
+//6.结束Dispatch
+//7.PassLOD减1，交换Consume和Append，回到2执行下一层LOD的遍历
 //生成AppendFinalNodeList和NodeDescriptors
 [numthreads(1,1,1)]
 void TraverseQuadTree (uint3 id : SV_DispatchThreadID)
 {
-    uint2 nodeLoc = ConsumeNodeList.Consume();
-    uint nodeId = GetNodeId(nodeLoc,PassLOD);
+    uint2 nodeLoc = ConsumeNodeList.Consume();//从Consume中取一个node
+    uint nodeId = GetNodeId(nodeLoc,PassLOD);//得到NodeID
     NodeDescriptor desc = NodeDescriptors[nodeId];
-    if(PassLOD > 0 && EvaluateNode(nodeLoc,PassLOD)){
+    if(PassLOD > 0 && EvaluateNode(nodeLoc,PassLOD)){//Evaluate为节点评价函数
         //divide
+        //分割节点，将下一级LOD节点的nodeLoc放入Append
         AppendNodeList.Append(nodeLoc * 2);
         AppendNodeList.Append(nodeLoc * 2 + uint2(1,0));
         AppendNodeList.Append(nodeLoc * 2 + uint2(0,1));
@@ -389,10 +418,15 @@ void SetLodTrans(inout RenderPatch patch,uint3 nodeLoc,uint2 patchOffset){
 }
 
 //生成Patch
+//1.完成四叉树分割之后得到FinalNodeList，记录了需要被渲染的Node(坐标x,y以及所属的LOD层级z)
+//2.LOD0的Node，其宽度为8m*8个patch=64m的边长，作为渲染单位仍然过大
+//3.因此渲染单位为patch，每个Node都需要打散为64个patch作为最小渲染单位
+
+//每个Node对应一个ThreadGroup，因此每个Group中应该是8*8个Thread(对应8*8个patch)
 [numthreads(8,8,1)]
 void BuildPatches(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,uint3 groupThreadId:SV_GroupThreadID){
-    uint3 nodeLoc = FinalNodeList[groupId.x];
-    uint2 patchOffset = groupThreadId.xy;
+    uint3 nodeLoc = FinalNodeList[groupId.x];//得到node对应的uv
+    uint2 patchOffset = groupThreadId.xy;//patch的偏移量uv
     //生成Patch
     RenderPatch patch = CreatePatch(nodeLoc,patchOffset);
 
