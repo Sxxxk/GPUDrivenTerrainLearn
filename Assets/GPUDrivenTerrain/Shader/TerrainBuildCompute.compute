@@ -8,7 +8,7 @@
 #pragma multi_compile_local __ BOUNDS_DEBUG
 #pragma multi_compile_local __ ENABLE_SEAM
 
-#include "./CommonInput.hlsl"
+#include "./CommonInput.hlsl"//定义了所需要的数据结构
 
 //各个术语简介
 //world:需要渲染的世界大小，10240m*10240m
@@ -359,12 +359,13 @@ bool Cull(Bounds bounds){
     return false;
 }
 
-
+//RenderPatch定义详见CommonInput.hlsl
+//该方法能够计算每个Patch的RenderPatch结构（包括世界坐标等）
 RenderPatch CreatePatch(uint3 nodeLoc,uint2 patchOffset){
-    uint lod = nodeLoc.z;
-    float nodeMeterSize = GetNodeSize(lod);
-    float patchMeterSize = nodeMeterSize / PATCH_COUNT_PER_NODE;
-    float2 nodePositionWS = GetNodePositionWS2(nodeLoc.xy,lod);
+    uint lod = nodeLoc.z;//得到LOD
+    float nodeMeterSize = GetNodeSize(lod);//Node边长
+    float patchMeterSize = nodeMeterSize / PATCH_COUNT_PER_NODE;//Patch边长
+    float2 nodePositionWS = GetNodePositionWS2(nodeLoc.xy,lod);//Node世界坐标
 
     uint2 patchLoc = nodeLoc.xy * PATCH_COUNT_PER_NODE + patchOffset;
     //经测试，当min和max相差较小时，RG32似乎还是存在精度问题
@@ -427,15 +428,16 @@ void SetLodTrans(inout RenderPatch patch,uint3 nodeLoc,uint2 patchOffset){
 void BuildPatches(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,uint3 groupThreadId:SV_GroupThreadID){
     uint3 nodeLoc = FinalNodeList[groupId.x];//得到node对应的uv
     uint2 patchOffset = groupThreadId.xy;//patch的偏移量uv
-    //生成Patch
-    RenderPatch patch = CreatePatch(nodeLoc,patchOffset);
 
-    //裁剪
+    RenderPatch patch = CreatePatch(nodeLoc,patchOffset);//生成Patch
+
     Bounds bounds = GetPatchBounds(patch);
     if(Cull(bounds)){
         return;
     }
     SetLodTrans(patch,nodeLoc,patchOffset);
+
+    //将Patch放入CullList队列进行裁剪
     CulledPatchList.Append(patch);
     #if BOUNDS_DEBUG
     BoundsDebug boundsDebug;

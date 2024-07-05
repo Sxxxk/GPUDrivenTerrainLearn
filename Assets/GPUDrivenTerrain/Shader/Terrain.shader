@@ -26,13 +26,13 @@ Shader "GPUTerrainLearn/Terrain"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "./CommonInput.hlsl"
 
-            StructuredBuffer<RenderPatch> PatchList;
+            StructuredBuffer<RenderPatch> PatchList;//计算得到的Patch列表
 
             struct appdata
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
-                uint instanceID : SV_InstanceID;
+                uint instanceID : SV_InstanceID;//GPU InstanceID，用于索引Patch
             };
 
             struct v2f
@@ -148,7 +148,7 @@ uniform float4x4 _HizCameraMatrixVP;
                 float4 inVertex = v.vertex;
                 float2 uv = v.uv;
 
-                RenderPatch patch = PatchList[v.instanceID];
+                RenderPatch patch = PatchList[v.instanceID];//通过InstanceID得到对应的patch
                 #if ENABLE_LOD_SEAMLESS
                 FixLODConnectSeam(inVertex,uv,patch);
                 #endif

@@ -24,11 +24,12 @@ struct NodeDescriptor{
     uint branch;
 };
 
+//Patch的数据结构
 struct RenderPatch{
-    float2 position;
-    float2 minMaxHeight;
-    uint lod;
-    uint4 lodTrans;
+    float2 position;    //世界坐标
+    float2 minMaxHeight;//
+    uint lod;           //LOD层级，决定了patch的scale
+    uint4 lodTrans;     //
 };
 
 
